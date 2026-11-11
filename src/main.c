@@ -8,11 +8,9 @@
 
 int count = 0;
 int capacity = DEFAULT_CAPACITY;
-int ledState = -1;
 
 void setLed(int on)
 {
-#ifdef ON_PI
     int result;
 
     if (on)
@@ -36,20 +34,6 @@ void setLed(int on)
     {
         printf("Warning: could not change the LED\n");
     }
-#else
-    if (on != ledState)
-    {
-        if (on)
-        {
-            printf("[simulated LED is now ON]\n");
-        }
-        else
-        {
-            printf("[simulated LED is now OFF]\n");
-        }
-    }
-#endif
-    ledState = on;
 }
 
 int isFull(void)
