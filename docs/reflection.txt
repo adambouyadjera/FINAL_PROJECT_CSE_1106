@@ -1,0 +1,9 @@
+1. I worked alone for this project so i did all of the coding, wriing, and managing the repo.
+2. My most challenging problem that i faced was setting the LED on. I've never worked with hardware before so i was out of my comfort zone
+and I didn't know any of the code for it. I researched a lot about how the code works and how to implement it.
+3. I first set a LED on in simulation mode to test if it actually would turn on if connected. My program worked but then when i actually connected
+the LED it wasn't turning on. It turns out, I had a bug in my code that stopped the LED from even being read. My code was for an older version but
+then when i found the new version of it, it worked
+4. The setting up a breadboard was the most useful here because originally i didn't know how a breadboard worked, so learning it here helped a lot.
+5. I would improve the UI of the program. Personally, I don't like where a program is only in a terminal. I want to interact with the program by having a website
+or an app.
