@@ -1,200 +1,201 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <time.h>
 
 #define DEFAULT_CAPACITY 5
-#define LED_PIN 17
 #define LOG_FILE "data/occupancy_log.csv"
 #define LOG_FILE_FROM_SRC "../data/occupancy_log.csv"
-#define BUF_SIZE 64
 
-typedef struct
-{
-    int count;
-    int capacity;
-} Room;
+int count = 0;
+int capacity = DEFAULT_CAPACITY;
+int ledState = -1;
 
 void setLed(int on)
 {
-    #ifdef ON_PI
-    char cmd[BUF_SIZE];
+#ifdef ON_PI
+    int result;
 
-    snprintf(cmd, sizeof(cmd), "pinctrl set %d op %s", LED_PIN, on ? "dh" : "dl");
-    if (system(cmd) != 0)
+    if (on)
     {
-        printf("Warning: could not change the LED (is pinctrl installed?)\n");
-    }
-    #else
-    static int lastState = -1;
-
-    if (on != lastState)
-    {
-        printf("[simulated LED is now %s]\n", on ? "ON" : "OFF");
-        lastState = on;
-    }
-    #endif
-}
-
-int isFull(const Room *room)
-{
-    return room->count >= room->capacity;
-}
-
-void updateLed(const Room *room)
-{
-    setLed(isFull(room));
-}
-
-const char *getStatus(const Room *room)
-{
-    return isFull(room) ? "ROOM FULL" : "SPACE AVAILABLE";
-}
-
-void showStatus(const Room *room)
-{
-    printf("\n%-20s %-18s %s\n", "Current Occupancy", "System Status", "Full Indicator LED");
-    printf("%2d / %-15d %-18s %s\n\n",
-           room->count, room->capacity, getStatus(room), isFull(room) ? "ON" : "OFF");
-}
-
-const char *logPath = LOG_FILE;
-
-FILE *openLog(void)
-{
-    FILE *fp = fopen(LOG_FILE, "a");
-
-    if (fp == NULL)
-    {
-        fp = fopen(LOG_FILE_FROM_SRC, "a");
-        logPath = LOG_FILE_FROM_SRC;
+        result = system("pinctrl set 17 op dh 2>/dev/null");
+        if (result != 0)
+        {
+            result = system("raspi-gpio set 17 op dh");
+        }
     }
     else
     {
-        logPath = LOG_FILE;
+        result = system("pinctrl set 17 op dl 2>/dev/null");
+        if (result != 0)
+        {
+            result = system("raspi-gpio set 17 op dl");
+        }
     }
 
-    if (fp != NULL && ftell(fp) == 0)
+    if (result != 0)
     {
-        fprintf(fp, "timestamp,event,occupancy,capacity,status\n");
+        printf("Warning: could not change the LED\n");
     }
-
-    return fp;
+#else
+    if (on != ledState)
+    {
+        if (on)
+        {
+            printf("[simulated LED is now ON]\n");
+        }
+        else
+        {
+            printf("[simulated LED is now OFF]\n");
+        }
+    }
+#endif
+    ledState = on;
 }
 
-void logEvent(const Room *room, const char *event)
+int isFull(void)
 {
-    FILE *fp = openLog();
-    char timeStr[BUF_SIZE];
+    return count >= capacity;
+}
+
+void updateLed(void)
+{
+    setLed(isFull());
+}
+
+void showStatus(void)
+{
+    printf("\n%-20s %-18s %s\n", "Current Occupancy", "System Status", "Full Indicator LED");
+
+    if (isFull())
+    {
+        printf("%2d / %-15d %-18s %s\n\n", count, capacity, "ROOM FULL", "ON");
+    }
+    else
+    {
+        printf("%2d / %-15d %-18s %s\n\n", count, capacity, "SPACE AVAILABLE", "OFF");
+    }
+}
+
+void logEvent(char event[])
+{
+    FILE *fp;
+    char timeStr[64];
     time_t now = time(NULL);
 
+    fp = fopen(LOG_FILE, "a");
+    if (fp == NULL)
+    {
+        fp = fopen(LOG_FILE_FROM_SRC, "a");
+    }
     if (fp == NULL)
     {
         printf("Warning: could not open %s for writing\n", LOG_FILE);
         return;
     }
 
+    if (ftell(fp) == 0)
+    {
+        fprintf(fp, "timestamp,event,occupancy,capacity,status\n");
+    }
+
     strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", localtime(&now));
-    fprintf(fp, "%s,%s,%d,%d,%s\n",
-            timeStr, event, room->count, room->capacity, getStatus(room));
+
+    if (isFull())
+    {
+        fprintf(fp, "%s,%s,%d,%d,ROOM FULL\n", timeStr, event, count, capacity);
+    }
+    else
+    {
+        fprintf(fp, "%s,%s,%d,%d,SPACE AVAILABLE\n", timeStr, event, count, capacity);
+    }
+
     fclose(fp);
 }
 
-int readInt(const char *prompt, int *value)
+void clearInput(void)
 {
-    char buffer[BUF_SIZE];
-    char *end;
-    long num;
+    int ch = getchar();
 
-    printf("%s", prompt);
-    if (fgets(buffer, sizeof(buffer), stdin) == NULL)
+    while (ch != '\n' && ch != EOF)
     {
-        return -1;
+        ch = getchar();
     }
-
-    num = strtol(buffer, &end, 10);
-    if (end == buffer || (*end != '\n' && *end != '\0'))
-    {
-        return 0;
-    }
-
-    *value = (int)num;
-    return 1;
 }
 
-void recordEntry(Room *room)
+void recordEntry(void)
 {
-    if (isFull(room))
+    if (isFull())
     {
-        printf("Entry denied: the room is full (%d/%d). Someone must exit first.\n",
-               room->count, room->capacity);
-        logEvent(room, "ENTRY DENIED");
+        printf("Entry denied: the room is full (%d/%d). Someone must exit first.\n\n",
+               count, capacity);
+        logEvent("ENTRY DENIED");
         return;
     }
 
-    room->count++;
+    count++;
     printf("Person entered.\n");
-    logEvent(room, "ENTER");
-    updateLed(room);
-    showStatus(room);
+    logEvent("ENTER");
+    updateLed();
+    showStatus();
 }
 
-void recordExit(Room *room)
+void recordExit(void)
 {
-    if (room->count <= 0)
+    if (count <= 0)
     {
-        printf("Exit rejected: the room is already empty.\n");
-        logEvent(room, "EXIT REJECTED");
+        printf("Exit rejected: the room is already empty.\n\n");
+        logEvent("EXIT REJECTED");
         return;
     }
 
-    room->count--;
+    count--;
     printf("Person exited.\n");
-    logEvent(room, "EXIT");
-    updateLed(room);
-    showStatus(room);
+    logEvent("EXIT");
+    updateLed();
+    showStatus();
 }
 
-void changeCapacity(Room *room)
+void changeCapacity(void)
 {
     int newCapacity;
-    int result = readInt("Enter new maximum capacity: ", &newCapacity);
 
-    if (result != 1)
+    printf("Enter new maximum capacity: ");
+    if (scanf("%d", &newCapacity) != 1)
     {
-        printf("Invalid number. Capacity unchanged.\n");
+        clearInput();
+        printf("Invalid number. Capacity unchanged.\n\n");
         return;
     }
+    clearInput();
+
     if (newCapacity < 1)
     {
-        printf("Capacity must be at least 1. Capacity unchanged.\n");
+        printf("Capacity must be at least 1. Capacity unchanged.\n\n");
         return;
     }
-    if (newCapacity < room->count)
+    if (newCapacity < count)
     {
-        printf("There are %d people in the room. Capacity cannot be lower than that.\n",
-               room->count);
+        printf("There are %d people in the room. Capacity cannot be lower than that.\n\n",
+               count);
         return;
     }
 
-    room->capacity = newCapacity;
-    printf("Maximum capacity changed to %d.\n", room->capacity);
-    logEvent(room, "CAPACITY CHANGE");
-    updateLed(room);
-    showStatus(room);
+    capacity = newCapacity;
+    printf("Maximum capacity changed to %d.\n", capacity);
+    logEvent("CAPACITY CHANGE");
+    updateLed();
+    showStatus();
 }
 
 int main(void)
 {
-    Room room = {0, DEFAULT_CAPACITY};
     int choice;
-    int result;
     int running = 1;
 
     printf("=== Smart Study Room Occupancy Tracker ===\n");
     setLed(0);
-    logEvent(&room, "SYSTEM START");
-    showStatus(&room);
+    logEvent("SYSTEM START");
+    showStatus();
 
     while (running)
     {
@@ -203,31 +204,33 @@ int main(void)
         printf("3. Show status\n");
         printf("4. Change maximum capacity\n");
         printf("5. Quit\n");
+        printf("Choice: ");
 
-        result = readInt("Choice: ", &choice);
-        if (result == -1)
+        if (scanf("%d", &choice) != 1)
         {
-            break;
-        }
-        if (result == 0)
-        {
+            if (feof(stdin))
+            {
+                break;
+            }
+            clearInput();
             printf("Please enter a number from 1 to 5.\n\n");
             continue;
         }
+        clearInput();
 
         switch (choice)
         {
             case 1:
-                recordEntry(&room);
+                recordEntry();
                 break;
             case 2:
-                recordExit(&room);
+                recordExit();
                 break;
             case 3:
-                showStatus(&room);
+                showStatus();
                 break;
             case 4:
-                changeCapacity(&room);
+                changeCapacity();
                 break;
             case 5:
                 running = 0;
@@ -238,7 +241,7 @@ int main(void)
     }
 
     setLed(0);
-    logEvent(&room, "SYSTEM STOP");
-    printf("Goodbye. Events were saved to %s\n", logPath);
+    logEvent("SYSTEM STOP");
+    printf("Goodbye. Events were saved to the data folder.\n");
     return 0;
 }
